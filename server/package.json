@@ -1,0 +1,41 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "dev": "cp .env compiledNode/.env && tsc-watch --noClear -p ./tsconfig.json --onSuccess \"node compiledNode/index.js\"",
+    "build": "npx tsc && eslint *.ts",
+    "lint": "eslint */*.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@eslint/js": "^9.20.0",
+    "@types/argon2": "^0.14.1",
+    "@types/cookie-parser": "^1.4.8",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/express-session": "^1.18.1",
+    "@types/mongoose": "^5.11.96",
+    "@types/node": "^22.13.1",
+    "eslint": "^9.20.1",
+    "globals": "^15.15.0",
+    "node": "^22.14.0",
+    "tsc-watch": "^6.2.1",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.24.1"
+  },
+  "dependencies": {
+    "argon2": "^0.41.1",
+    "bcryptjs": "^3.0.0",
+    "connect-mongo": "^5.1.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-session": "^1.18.1",
+    "mongoose": "^8.10.0"
+  }
+}
