@@ -115,6 +115,18 @@ export const addView = async (req: express.Request, res: express.Response, next:
         if(!video){
             throw new ExpressError(`Can't find video with ID ${req.params.videoID}`, 404);
         }
+        const videoObj: object = video.toObject();
+        if(!videoObj){
+            throw new ExpressError("An unknown error occurred!", 500);
+        }
+        const legalKeys: string[] = ["userID", "videoTitle", "videoURL", "tags", "views", "likes", "dislikes"];
+        Object.keys(videoObj).forEach((key:string)=>{
+            if(!legalKeys.includes(key)){
+                delete videoObj[key as keyof object];
+            }
+        })
+
+        res.status(200).json(videoObj);
     } catch(err){
         next(err)
     }
