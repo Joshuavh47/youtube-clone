@@ -1,8 +1,9 @@
 import express from 'express';
 import { ExpressError } from '../errorHandler';
 import Video from '../models/Video';
-import mongoose from 'mongoose';
+import mongoose, { mongo } from 'mongoose';
 import { IVideo } from '../models/Video';
+import User from '../models/User';
 
 export const like = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try{
@@ -129,5 +130,61 @@ export const addView = async (req: express.Request, res: express.Response, next:
         res.status(200).json(videoObj);
     } catch(err){
         next(err)
+    }
+}
+
+export const getSubscribedVideos = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try{
+        // Make sure there is a session
+        if(!req.session.uid){
+            throw new ExpressError("You must be signed in to get subscribed videos!", 404);
+        }
+
+        // Get the user's info
+        const user: mongoose.Document|null = await User.findById(req.session.uid);
+
+        // If there is a problem, throw an error
+        if(!user){
+            throw new ExpressError("Internal Server Error!", 404);
+        }
+
+        // Get all the subscribed users from the current user
+        const subscribedChannels: string[] = user.get("subscribedUsers");
+
+        // Throw an error if we can't
+        if(!subscribedChannels){
+            throw new ExpressError("Could not get subscribed channels. Reload or re-signin.", 404);
+        }
+        
+        // Get 20 random videos from channels in subscribedChannels
+        const randVids = await Video.aggregate([
+            {
+                $match: {
+                    userID: {
+                        $in: subscribedChannels
+                    }},
+                }, {$sample: {size: 20}
+            }
+        ]);
+        
+        /* 
+        * Remove verbose info and liked/disiked users.
+        * If there are a lot of likes/dislikes on a video, these arrays could lead to a large response.
+        * This endpoint should only really be called on the homepage, so this information wouldn't be needed anyways.
+        */
+        const illegalKeys: string[] = ["__v", "likedUsers", "dislikedUsers"]
+
+        // For each video, go through all the keys. Remove unneccessary ones. 
+        randVids.forEach((vid: mongoose.Document)=>{
+            Object.keys(vid).forEach((key: string)=>{
+                if(illegalKeys.includes(key)){
+                    delete vid[key as keyof object];
+                }
+            });
+        });
+
+        res.status(200).json(randVids);
+    } catch(err){
+        next(err);
     }
 }

@@ -130,17 +130,23 @@ export const subscribe = async (req: express.Request, res: express.Response, nex
         if(req.session.uid == req.params.id){
             throw new ExpressError("You can't subscribe to yourself!");
         }
-        const user: mongoose.Document|null = await User.findById(req.params.id);
-        if(!user){
+        const subscribedUser: mongoose.Document|null = await User.findById(req.params.id);
+        if(!subscribedUser){
             throw new ExpressError("User not found!", 404);
+        }
+        const user: mongoose.Document|null = await User.findById(req.session.uid);
+        if(!user){
+            throw new ExpressError("Unable to fetch current user!", 404);
         }
         const subs: string[]|undefined = user.get('subscribedUsers');
         if(!subs){
             throw new ExpressError("Internal server error!");
         }
-        if(!subs.includes(req.session.uid)){
-            subs.push(req.session.uid);
-            await User.updateOne({_id:req.params.id}, {subscribedUsers:subs ,$inc:{subscribers:1}});
+        console.log(subs);
+        if(!subs.includes(req.params.id)){
+            subs.push(req.params.id);
+            console.log(subs);
+            await User.updateOne({_id:req.session.uid}, {subscribedUsers:subs ,$inc:{subscribers:1}});
         }
         
         res.status(200).json("Success!");
@@ -158,18 +164,22 @@ export const unsubscribe = async (req: express.Request, res: express.Response, n
         if(!req.params.id){
             throw new ExpressError("Invalid user ID!", 404);
         }
-        const user: mongoose.Document|null = await User.findById(req.params.id);
-        if(!user){
+        const subscribedUser: mongoose.Document|null = await User.findById(req.params.id);
+        if(!subscribedUser){
             throw new ExpressError("User not found!", 404);
+        }
+        const user: mongoose.Document|null = await User.findById(req.session.uid);
+        if(!user){
+            throw new ExpressError("Unable to fetch current user!", 404);
         }
         const subs: string[]|undefined = user.get('subscribedUsers');
         if(!subs){
             throw new ExpressError("Internal server error!");
         }
-        const index: number = subs.indexOf(req.session.uid);
+        const index: number = subs.indexOf(req.params.id);
         if(index>=0){
             subs.splice(index, 1);
-            await User.updateOne({_id:req.params.id}, {subscribedUsers:subs, $inc:{subscribers: -1}});
+            await User.updateOne({_id:req.session.uid}, {subscribedUsers:subs, $inc:{subscribers: -1}});
         }
         res.status(200).json("Unsubscribed successfully");
 
