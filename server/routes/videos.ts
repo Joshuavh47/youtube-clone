@@ -1,5 +1,5 @@
 import express from "express"
-import { like, dislike, upload, deleteVid, addView, getSubscribedVideos } from '../controllers/videos'
+import { like, dislike, upload, deleteVid, addView, getSubscribedVideos, updateVideo } from '../controllers/videos'
 import { verifySession } from "../controllers/auth";
 
 const router = express.Router();
@@ -15,5 +15,7 @@ router.delete("/delete/:videoID", verifySession, deleteVid);
 router.put("/addView/:videoID", addView);
 
 router.get("/subscribed/", getSubscribedVideos);
+
+router.put("/update/:videoID", updateVideo);
 
 export default router;

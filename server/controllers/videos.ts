@@ -183,7 +183,7 @@ export const getSubscribedVideos = async (req: express.Request, res: express.Res
 		* If there are a lot of likes/dislikes on a video, these arrays could lead to a large response.
 		* This endpoint should only really be called on the homepage, so this information wouldn't be needed anyways.
 		*/
-		const illegalKeys: string[] = ["__v", "likedUsers", "dislikedUsers"]
+		const illegalKeys: string[] = ["__v", "likedUsers", "dislikedUsers", "comments"];
 
 		// For each video, go through all the keys. Remove unneccessary ones. 
 		randVids.forEach((vid: mongoose.Document) => {
@@ -198,4 +198,34 @@ export const getSubscribedVideos = async (req: express.Request, res: express.Res
 	} catch (err) {
 		next(err);
 	}
+}
+
+export const updateVideo = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try{
+        if(!req.session.uid){
+            throw new ExpressError("You must be signed in to do this!", 404);
+        }
+        const legalKeys: string[] = ["videoTitle", "desc", "imgURL", "videoURL", "tags"];
+        const updateParams: object = {...req.body};
+        Object.keys(updateParams).forEach((key: string)=>{
+            if(!(legalKeys.includes(key))){
+                delete updateParams[key as keyof object];
+            }
+        });
+
+        const video: mongoose.Document|null = await Video.findByIdAndUpdate(req.params.videoID, updateParams);
+        if(!video){
+            throw new ExpressError(`Unable to find video with ID: ${req.params.videoID}`, 404);
+        }
+        const videoObj: object = video.toObject();
+        const illegalKeys: string[] = ["__v", "likedUsers", "dislikedUsers", "comments"];
+        Object.keys(videoObj).forEach((key: string)=>{
+            if(illegalKeys.includes(key)){
+                delete videoObj[key as keyof object];
+            }
+        })
+        res.status(200).json(videoObj);
+    } catch(err){
+        next(err);
+    }
 }
