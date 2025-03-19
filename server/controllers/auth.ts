@@ -38,7 +38,7 @@ export const signup = async (req: express.Request, res: express.Response, next: 
         // Save to Mongo
         await newUser.save();
 
-        
+        // Sanitize response object
         const userObj: object|undefined = sanitizeUser(req, res, next, newUser.toObject());
 
 
@@ -49,12 +49,12 @@ export const signup = async (req: express.Request, res: express.Response, next: 
 
         console.log("created user");
 
+        // Respond to request
         res.status(200).json(userObj);
         
     }
     catch(err){
-        //Pass the error to handler function
-        
+        // Pass the error to handler function
         next(err);
     }
 }
@@ -65,11 +65,14 @@ export const signin = async (req: express.Request, res: express.Response, next: 
         // Get user from mongo
         const user: mongoose.Document|null= await User.findOne({email: req.body['email']});
         
+        // Make sure we actually got the user
         if(!user){
             throw new ExpressError("Incorrect username or password", 404);
         }
         console.log(req.session.uid)
         console.log(user.get("_id"))
+
+        // Check to make sure we don't already have a session
         if(req.session.uid){
             if(req.session.uid == user.get("_id")){
                 throw new ExpressError("You're already signed in!");
@@ -99,8 +102,10 @@ export const signin = async (req: express.Request, res: express.Response, next: 
         }
 
         
-        
+        // Sanitize response
         const out: object|undefined = sanitizeUser(req, res, next, user.toObject());
+
+        // Make sure the response isn't null
         if(!out){
             throw new ExpressError("Internal server error!");
         }
@@ -114,6 +119,7 @@ export const signin = async (req: express.Request, res: express.Response, next: 
 
         console.log("created user");
 
+        // Respond to request
         res.status(200).json(out);
     }
     catch(err){
@@ -128,10 +134,12 @@ export const signout = (req: express.Request, res: express.Response, next: expre
     try{
         console.log(req.cookies)
         //console.log(req.session.uid)
-        if(req.session.uid === undefined){
+        // Ensure that the user is signed in
+        if(!req.session.uid){
             throw new ExpressError("Must be signed in to do this!", 404);
         }
-
+        
+        // Destroy session
         req.session.destroy(()=>{});
         //res.clearCookie('connect.sid')
         res.status(200).json("User signed out successfully!");
@@ -142,10 +150,12 @@ export const signout = (req: express.Request, res: express.Response, next: expre
 
 export const verifySession = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
+        // If user session doesn't exist, error
         if(!req.session.uid){
             throw new ExpressError("Unauthorized!", 403);
         }
         else{
+            // Otherwise, go to the next function in the chain
             next();
         }
     } 

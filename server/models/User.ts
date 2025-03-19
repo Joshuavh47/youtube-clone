@@ -11,7 +11,6 @@ export interface IUser extends mongoose.Document {
     subscribers: number;
     subscribedUsers: [string];
     videos: [string];
-    comments: [string];
 }
 
 export const UserSchema = new mongoose.Schema<IUser>(
@@ -46,9 +45,6 @@ export const UserSchema = new mongoose.Schema<IUser>(
         videos: {
             type: [String]
         },
-        comments: {
-            type: [String]
-        }
     },
     { timestamps: true }
 );
