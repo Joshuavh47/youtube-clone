@@ -13,6 +13,7 @@ export interface IVideo extends mongoose.Document {
     likedUsers: [string];
     dislikes: number;
     dislikedUsers: [string];
+    comments: [string];
 }
 
 const VideoSchema = new mongoose.Schema<IVideo>(
@@ -61,6 +62,9 @@ const VideoSchema = new mongoose.Schema<IVideo>(
             type: [String], 
             default: []
         },
+        comments: {
+            type: [String],
+        }
     }, 
     {timestamps: true}
 );

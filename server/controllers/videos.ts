@@ -4,6 +4,7 @@ import Video from '../models/Video';
 import mongoose from 'mongoose';
 import { IVideo } from '../models/Video';
 import User from '../models/User';
+import Comment from '../models/Comment'
 
 export const like = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
 	try {
@@ -99,6 +100,8 @@ export const deleteVid = async (req: express.Request, res: express.Response, nex
 		if (req.session.uid != video.get("userID")) {
 			throw new ExpressError("You can only delete your own videos!", 404);
 		}
+        await Comment.deleteMany({_id: {$in:video.get("comments")}});
+        await User.findByIdAndUpdate(req.session.uid, {$pull: {videos: video.get("_id")}});
 		await Video.deleteOne({ _id: req.params.videoID });
 		const legalKeys: string[] = ["userID", "videoTitle", "videoURL", "tags", "views", "likes", "dislikes"];
 		Object.keys(videoObj).forEach((key: string) => {
