@@ -16,6 +16,6 @@ router.put("/addView/:videoID", addView);
 
 router.get("/subscribed/", getSubscribedVideos);
 
-router.put("/update/:videoID", updateVideo);
+router.put("/update/:videoID", verifySession, updateVideo);
 
 export default router;

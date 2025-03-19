@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { ExpressError } from '../errorHandler';
 import User from '../models/User'
 import Comment from '../models/Comment'
+import Video from '../models/Video'
 
 export const addComment = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try{
@@ -12,8 +13,37 @@ export const addComment = async (req: express.Request, res: express.Response, ne
         const comment: mongoose.Document = new Comment({userID: req.session.uid, videoID: req.params.videoID, desc: req.body['desc']??""});
         await comment.save();
         await User.findByIdAndUpdate(req.session.uid, {$addToSet: {comments: comment.get("_id")}});
+        res.status(200).json({id: comment.get("_id"),userID: comment.get("userID"), videoID: comment.get("videoID"), desc: comment.get("desc")})
     } catch(err){
         next(err);
+    }
+}
+
+export const deleteComment = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try{
+        if(!req.session.uid){
+            throw new ExpressError("Unable to fetch user!", 404);
+        }
+        const comment: mongoose.Document|null = await Comment.findById(req.params.id);
+        if(!comment){
+            throw new ExpressError(`Unable to find comment with ID: ${req.params.id}`, 404);
+        }
+        const video: mongoose.Document|null = await Video.findById(comment.get("videoID"));
+        if(!video){
+            throw new ExpressError(`Unable to find video with ID: ${comment.get("videoID")}`, 404);
+        }
+        if(!(req.session.uid !=comment.get("userID") || req.session.uid != video.get("userID"))){
+            throw new ExpressError("You must own this comment or video to delete!", 403);
+        }
+        Comment.deleteOne({_id: comment.get("_id")});
+        const commentObj: object = comment.toObject();
+        if("__v" in commentObj){
+            delete commentObj.__v;
+        }
+
+        res.status(200).json(commentObj)
+    } catch(err){
+       next(err); 
     }
 }
 
