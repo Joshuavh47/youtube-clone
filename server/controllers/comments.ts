@@ -35,7 +35,7 @@ export const deleteComment = async (req: express.Request, res: express.Response,
         if(!(req.session.uid !=comment.get("userID") || req.session.uid != video.get("userID"))){
             throw new ExpressError("You must own this comment or video to delete!", 403);
         }
-        Comment.deleteOne({_id: comment.get("_id")});
+        await Comment.deleteOne({_id: comment.get("_id")});
         const commentObj: object = comment.toObject();
         if("__v" in commentObj){
             delete commentObj.__v;
@@ -44,6 +44,28 @@ export const deleteComment = async (req: express.Request, res: express.Response,
         res.status(200).json(commentObj)
     } catch(err){
        next(err); 
+    }
+}
+
+export const updateComment = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try{
+        if(!req.session.uid){
+            throw new ExpressError("You must be signed in to do this!", 403);
+        }
+        if(!req.body["desc"]){
+            throw new ExpressError("The comment body must not be null!");
+        }
+        const comment: mongoose.Document|null = await Comment.findById(req.params.id);
+        if(!comment){
+            throw new ExpressError(`Unable to find a comment with ID: ${req.params.id}`, 404);
+        }
+        if(comment.get("userID") != req.session.uid){
+            throw new ExpressError("Only the owner of this comment can edit it!", 403);
+        }
+        await Comment.updateOne({_id: req.session.uid}, {desc: req.body["desc"], edited: true});
+        res.status(200).json({userID: req.session.uid, videoID: comment.get("videoID"), desc: req.body["desc"], edited: true});
+    } catch(err){
+        next(err);
     }
 }
 

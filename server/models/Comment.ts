@@ -4,6 +4,7 @@ interface IComment extends mongoose.Document {
     userID: string;
     videoID: string;
     desc: string;
+    edited: boolean;
 }
 
 const CommentSchema = new mongoose.Schema<IComment>(
@@ -19,6 +20,10 @@ const CommentSchema = new mongoose.Schema<IComment>(
         desc: {
             type: String, 
             required: true,
+        },
+        edited: {
+            type: Boolean,
+            default: false,
         },
     }, 
     {timestamps: true}
