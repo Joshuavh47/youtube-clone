@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import User, { sanitizeUser } from '../models/User';
 import { ExpressError } from '../errorHandler';
 import argon2 from 'argon2';
+import Video from '../models/Video';
 
 export const updateUser = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
@@ -66,12 +67,20 @@ export const deleteUser = async (req: express.Request, res: express.Response, ne
         if(!req.session.uid){
             throw new ExpressError("Session is null!");
         }
-        const user: mongoose.Document|null = await User.findByIdAndDelete(req.session.uid);
+        const user: mongoose.Document|null = await User.findById(req.session.uid);
         if(!user){
-            throw new ExpressError("");
+            throw new ExpressError("Unable to fetch user!", 404);
         }
-        req.session.destroy(()=>{});
-        res.clearCookie('connect.sid');
+        console.log(user.get("videos"));
+        const userVideos = await Video.find({
+            "_id": {
+                $in: user.get("videos")
+            }
+        });
+        console.log(userVideos);
+        await Video.deleteMany({_id: {$in: user.get("videos")}})
+        //req.session.destroy(()=>{});
+        //res.clearCookie('connect.sid');
         res.status(200).json("Successfully deleted User");
     } catch(err){
         next(err);
