@@ -17,7 +17,6 @@ process_pool = []
 
 
 def initProcesses(queue, num_workers):
-    #video_process_dir_global = os.environ.get('VIDEO_PROCESS_DIR')
     for _ in range(num_workers):
         process_pool.append(multiprocessing.Process(target=processVideo, args=(queue,)))
    
@@ -56,7 +55,7 @@ def convertToH264(input_file, output_dir, id):
             ).run()
     except ffmpeg.Error as e:
         print(e.stderr)
-        print("TEST")
+    
     try:
         with open(f'{output_dir}/{id}/{id}_master.m3u8', 'w') as f:
             f.write('#EXTM3U\n')
@@ -127,6 +126,7 @@ if __name__ == "__main__":
             os.remove(socket_path)
         except Exception as e:
             print(e)
+            traceback.print_exc()
             exit()
 
     minioClient=Minio(
