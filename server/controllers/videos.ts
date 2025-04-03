@@ -5,6 +5,7 @@ import mongoose from 'mongoose';
 import { IVideo } from '../models/Video';
 import User from '../models/User';
 import Comment from '../models/Comment'
+import { sendToProcessor } from '../videoPrep/sendToPrep';
 
 export const like = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
 	try {
@@ -116,7 +117,9 @@ export const upload = async (req: express.Request, res: express.Response, next: 
 		if ('__v' in videoObj) {
 			delete videoObj.__v;
 		}
-
+        
+        sendToProcessor(video._id as string);
+        console.log(video._id as string)
         // Send response to user
 		res.status(200).json(videoObj);
 
