@@ -1,26 +1,27 @@
 import multiprocessing
-import socket
 import os
 from minio import Minio
 from dotenv import load_dotenv
 import ffmpeg
 import traceback
 import shutil
+import json
+from confluent_kafka import Consumer
+
 
 # log_path = ""
 
-num_workers = 2
-socket_path = "/tmp/videoprocd.sock"
-video_process_dir_global = ""
+
+
+num_workers = 5
 
 process_pool = []
 
 
-def initProcesses(queue, num_workers):
+def initProcesses(num_workers):
     for _ in range(num_workers):
-        process_pool.append(multiprocessing.Process(target=processVideo, args=(queue,)))
+        process_pool.append(multiprocessing.Process(target=processVideo))
    
-    process_pool.append(multiprocessing.Process(target=listenForIds, args=(queue,)))
 
 def convertToH264(input_file, output_dir, id):
     resolutions = {
@@ -29,7 +30,7 @@ def convertToH264(input_file, output_dir, id):
         '1080p': {'scale': '1920x1080', 'bitrate': '4000k'}
     }
     
-
+    # Make a temp directory for our new files
     if not os.path.exists(f'{output_dir}/{id}'):
         os.makedirs(f'{output_dir}/{id}')
 
@@ -37,7 +38,7 @@ def convertToH264(input_file, output_dir, id):
         for res, params in resolutions.items():
             
             playlist_name = f'{output_dir}/{id}/{res}.h3u8'
-            
+            # Convert to HLS (H.264/AAC)
             ffmpeg.input(input_file).output(
                 playlist_name,
                 format='hls',
@@ -57,9 +58,11 @@ def convertToH264(input_file, output_dir, id):
         print(e.stderr)
     
     try:
+        # Create master playlist (HLS)
         with open(f'{output_dir}/{id}/{id}_master.m3u8', 'w') as f:
             f.write('#EXTM3U\n')
             for res, _ in resolutions.items():
+                # URI is id/res.h3u8 because that is the format that is used in the S3 bucket
                 f.write(f'#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="video",NAME="{res}",DEFAULT=NO,AUTOSELECT=YES,URI="{id}/{res}.m3u8"\n')
             for res, params in resolutions.items():
                 f.write(f'#EXT-X-STREAM-INF:BANDWIDTH={params["bitrate"][:-1]}000,AVERAGE-BANDWIDTH={params["bitrate"][:-1]}000,CODECS="avc1.42c01e,mp4a.40.2",RESOLUTION={params["scale"]},GROUP-ID="video"\n') # pyright: ignore
@@ -68,67 +71,77 @@ def convertToH264(input_file, output_dir, id):
         print(f"Error reading/writing to master playlist: {e}")
         traceback.print_exc()
 
-def processVideo(queue):
+def processVideo():
+    # Start Minio Client
+    
     minioClient=Minio(
         endpoint="localhost:9000",
         access_key=os.environ.get('MINIO_ACCESS_KEY'),
         secret_key=os.environ.get('MINIO_SECRET'), 
         secure=False
     )
+    
+    # Start Kafka consumer
+    kafkaConsumer = Consumer({
+        'bootstrap.servers': f'{os.environ.get('KAFKA_URI')}:{os.environ.get('KAFKA_PORT') or 9092}',
+        'group.id': 'video-processors',
+        'auto.offset.reset': 'earliest',
+    })
+    # Subscribe to our video processing topic
+    kafkaConsumer.subscribe(['video-processing-queue'])
+    # Get the temp dir for video processing
     video_process_dir = os.environ.get('VIDEO_PROCESS_DIR')
+
+    # End of init, start processing
     while(True):
-        filename = queue.get()
-        if not filename:
+        # Check for new messages
+        msg = kafkaConsumer.poll(1.0)
+        if msg is None: 
             continue
-        print(filename)
-        id = os.path.splitext(filename)[0]
-        inputDir = f"{video_process_dir}/unprocessed/{filename}"
+        if msg.error():
+            raise LookupError("Kafka Message Error")
+        # Get the video ID
+        parsed_msg = json.loads(msg.value().decode("utf-8"))
+        videoId = parsed_msg['videoId']
+
+        # Establish input/output directories for processed videos
+        input_path = f"{video_process_dir}/unprocessed/{videoId}"
         output_dir = f"{video_process_dir}/processed"
         
-        minioClient.fget_object("unprocessed", filename, inputDir)
-
-        convertToH264(inputDir, output_dir,id)
-
-        created_files = os.listdir(f'{output_dir}/{id}')
+        # Get the corresponding object from S3
         try:
+            minioClient.fget_object("unprocessed", videoId, input_path)
+        except:
+            print("no work")
+        # Convert video
+        convertToH264(input_path, output_dir, videoId)
+
+        # List of files created from convertToH264
+        created_files = os.listdir(f'{output_dir}/{videoId}')
+        try:
+            # Put processed files into the processed S3 bucket
             for path in created_files:
                 name = os.path.basename(path)
-                minioClient.fput_object("processed", f"{id}/{name}", f'{output_dir}/{id}/{path}')
-                print(path)
+                minioClient.fput_object("processed", f"{videoId}/{name}", f'{output_dir}/{videoId}/{path}')
+                print(path) # Sanity check
         except Exception as e:
             print(f'Error uploading files to S3 bucket: {e}')
             traceback.print_exc()
 
         try:
-            shutil.rmtree(f'{output_dir}/{id}')
-            os.remove(f'{video_process_dir}/unprocessed/{filename}')
+            # Remove files after upload
+            shutil.rmtree(f'{output_dir}/{videoId}')
+            os.remove(f'{video_process_dir}/unprocessed/{videoId}')
         except Exception as e:
-            print(f'Unable to delete directory {output_dir}/{id}: {e}')
+            print(f'Unable to delete directory {output_dir}/{videoId}: {e}')
             traceback.print_exc()
 
 
-def listenForIds(queue):
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    sock.bind(socket_path)
-    sock.listen(5)
-    while(True):
-        conn, addr = sock.accept()
-        data = conn.recv(100)
-        filename = data.decode().strip()
-        if(filename != None):
-            queue.put(filename)
-        
+
 
 if __name__ == "__main__":
     load_dotenv()
-    if(os.path.exists(socket_path)):
-        try:
-            os.remove(socket_path)
-        except Exception as e:
-            print(e)
-            traceback.print_exc()
-            exit()
-
+    print(f'{os.environ.get('MINIO_ACCESS_KEY')}, {os.environ.get('MINIO_SECRET')}')
     minioClient=Minio(
         endpoint="localhost:9000",
         access_key=os.environ.get('MINIO_ACCESS_KEY'),
@@ -142,16 +155,7 @@ if __name__ == "__main__":
         print("Unable to find buckets!")
         exit()
     
-    """
-    Queue must be explicitly declared as variables due to bug #94765 in python/cpython
-    GitHub repo. This bug affects some macOS and linux hosts, making it imposible to use 'spawn' 
-    as the start method for new processes unless the multiprocessing objects are declared in 
-    variables in the __name__ == "__main__" section, or else a FileNotFound error will be thrown. 
-    This method is prefered because spawn is safer and more lightweight than fork. 
-    """
-    
-    queue = multiprocessing.Queue()
-    initProcesses(queue, num_workers)
+    initProcesses(num_workers)
     for i in range(len(process_pool)):
         process_pool[i].start()
     for i in range(len(process_pool)):

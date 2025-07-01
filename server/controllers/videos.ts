@@ -1,11 +1,30 @@
 import express from 'express';
 import { ExpressError } from '../errorHandler';
-import Video from '../models/Video';
+import Video, { uploadStatus } from '../models/Video';
 import mongoose from 'mongoose';
 import { IVideo } from '../models/Video';
 import User from '../models/User';
 import Comment from '../models/Comment'
 import { sendToProcessor } from '../videoPrep/sendToPrep';
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import {verify_signature} from '../signing/hmac';
+import { sendJobToQueue, KafkaMessage } from '../kafka/kafka';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const minio = new S3Client({
+	region: "us-east-1",
+	endpoint: "http://localhost:9000",
+	forcePathStyle: true,
+	credentials: {
+		accessKeyId: process.env.MINIO_ACCESS_KEY!,
+		secretAccessKey: process.env.MINIO_SECRET!,
+	},
+});
+
+
 
 export const like = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
 	try {
@@ -72,8 +91,56 @@ export const dislike = async (req: express.Request, res: express.Response, next:
 
 }
 
+export const generateSignedURL = async (videoId: string, contentType: string) => {
+	if(!videoId){
+		throw new ExpressError("Invalid VideoID", 500);
+	}
+	const filename = `${videoId.toString()}`;
+	const bucket = 'unprocessed';
+	const expiry = 60 * 10; // URL valid for 10 minutes
+	
+	if(!contentType){
+		throw new ExpressError("Invalid content type!", 500);
+	}
+
+	const command = new PutObjectCommand({
+        Bucket: bucket,
+        Key: filename,
+        ContentType: contentType,
+    });
+
+	
+    const signedUrl = await getSignedUrl(minio, command, {
+        expiresIn: expiry, // 10 minutes
+    });
+
+    return { url: signedUrl, key: filename };
+}
+
+export const upload_complete = async (req: express.Request, res: express.Response, next: express.NextFunction) =>{
+	const received_signature: string = req.headers['X-Signature'] as string;
+	
+	const valid = verify_signature((req as any).rawBody, received_signature);
+
+	if(!valid){
+		res.status(403).send('Invalid signature');
+	}
+
+	const videoId: string = (req.body.key).split('/')[1];
+	console.log(videoId);
+
+	await sendJobToQueue('video-processing-queue', {videoId: videoId, contentType: ""});
+
+	Video.findByIdAndUpdate(videoId, {uploadStatus: uploadStatus.PROCESSING});
+
+	res.status(200).send();
+
+
+}
+
 export const upload = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
 	try {
+		console.log(await minio.config.credentials())
         // Check for actuve session
 		if (!req.session.uid) {
 			throw new ExpressError("You must be signed in to do this!", 404);
@@ -95,6 +162,10 @@ export const upload = async (req: express.Request, res: express.Response, next: 
         // Create a new video with the legal params specified by the user
 		const video: mongoose.Document | null = new Video({ ...videoParams, userID: req.session.uid });
 
+		if(!video._id){
+			throw new ExpressError("ID could not be generated", 500);
+		}
+
         // Create an object to send back to the user
 		const videoObj: object = video.toObject();
 
@@ -110,6 +181,22 @@ export const upload = async (req: express.Request, res: express.Response, next: 
             throw new ExpressError(`Unable to fetch user with ID: ${req.session.uid}`, 404);
         }
 
+		const contentType = req.get("content-type");
+		if(!('contentType' in video)){
+			throw new ExpressError("Internal Server Error", 500);
+		}
+		video.contentType = contentType;
+		
+		const url = await generateSignedURL(video._id as string, contentType ?? "video/mp4");
+
+		console.log(url)
+
+		if(!('uploadStatus' in video)){
+			throw new ExpressError("Internal Server Error", 500)
+		}
+
+		video.uploadStatus = uploadStatus.URL_REQUESTED;
+
         // Save the newly created video to the DB
 		await video.save();
 
@@ -118,10 +205,9 @@ export const upload = async (req: express.Request, res: express.Response, next: 
 			delete videoObj.__v;
 		}
         
-        sendToProcessor(video._id as string);
         console.log(video._id as string)
         // Send response to user
-		res.status(200).json(videoObj);
+		res.status(200).json({url, videoObj});
 
 	} catch (err) {
 		next(err);
@@ -324,4 +410,16 @@ export const updateVideo = async (req: express.Request, res: express.Response, n
     } catch(err){
         next(err);
     }
+}
+
+export const test = (req: express.Request, res: express.Response, next: express.NextFunction) =>{
+	try{
+		if(!req.params.id){
+			throw new ExpressError('Error!');
+		}
+		sendToProcessor(req.params.id);
+	} catch(err){
+		next(err);
+	}
+	res.status(200).json("complete");
 }

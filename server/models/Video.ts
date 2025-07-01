@@ -14,6 +14,15 @@ export interface IVideo extends mongoose.Document {
     dislikes: number;
     dislikedUsers: [string];
     comments: [string];
+    uploadStatus: string;
+    contentType: string;
+}
+
+export enum uploadStatus {
+    URL_REQUESTED, 
+    PROCESSING, 
+    SUCCESSFUL, 
+    FAILED = -1, 
 }
 
 const VideoSchema = new mongoose.Schema<IVideo>(
@@ -64,6 +73,12 @@ const VideoSchema = new mongoose.Schema<IVideo>(
         },
         comments: {
             type: [String],
+        }, 
+        uploadStatus: {
+            type: String, 
+        }, 
+        contentType: {
+            type: String
         }
     }, 
     {timestamps: true}

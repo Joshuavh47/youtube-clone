@@ -12,16 +12,17 @@ import session from 'express-session';
 import { CipherKey } from "node:crypto";
 import cookieParser from 'cookie-parser';
 import { ExpressError, handleError } from "./errorHandler";
+import { connectKafkaProducer, createTopic } from './kafka/kafka'
 
 //import { verify } from "./verifySession"
-
+dotenv.config();
 const sessionMaxAge: number = 1000*10*60;
 
-dotenv.config();
+
 
 const app = express();
 
-const connect = () => {
+const connectMongo = () => {
     mongoose.connect(process.env.MONGO as string).then(() => {
         console.log("Connected to DB!");
     }).catch((err:Error)=>{
@@ -29,9 +30,16 @@ const connect = () => {
     });
 }
 
-connect();
+connectMongo();
 
-app.use(express.json());
+connectKafkaProducer();
+createTopic();
+
+app.use(express.json({
+    verify: (req, res, buf) => {
+        (req as any).rawBody = buf.toString();
+    },
+}));
 
 app.use(cookieParser())
 
