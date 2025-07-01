@@ -5,7 +5,6 @@ import mongoose from 'mongoose';
 import { IVideo } from '../models/Video';
 import User from '../models/User';
 import Comment from '../models/Comment'
-import { sendToProcessor } from '../videoPrep/sendToPrep';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import {verify_signature} from '../signing/hmac';
@@ -417,7 +416,7 @@ export const test = (req: express.Request, res: express.Response, next: express.
 		if(!req.params.id){
 			throw new ExpressError('Error!');
 		}
-		sendToProcessor(req.params.id);
+		
 	} catch(err){
 		next(err);
 	}

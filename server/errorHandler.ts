@@ -15,9 +15,7 @@ export class ExpressError extends Error{
         
         this.status = status || 500;
         this.success = false;
-        if('code' in this){
-            this.code = this.code
-        }
+        
     }
     toJSON?() {
         return {
@@ -39,7 +37,7 @@ export const handleError = (err: ExpressError, status?: number): ExpressError =>
     if('code' in err){
         return {
             name: err.name,
-            status: err.status || 500, 
+            status: status || err.status || 500, 
             success: false,
             code: (err as ExpressError).code,
             message: err.message,
@@ -48,7 +46,7 @@ export const handleError = (err: ExpressError, status?: number): ExpressError =>
     
     return {
         name: err.name,
-        status: err.status || 500, 
+        status: status || err.status || 500, 
         success: false,
         message: err.message,
     }

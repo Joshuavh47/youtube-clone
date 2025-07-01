@@ -37,7 +37,7 @@ createTopic();
 
 app.use(express.json({
     verify: (req, res, buf) => {
-        (req as any).rawBody = buf.toString();
+        (req as any).rawBody = buf.toString(); // eslint-disable-line @typescript-eslint/no-explicit-any
     },
 }));
 
@@ -74,7 +74,7 @@ app.use("/api/comments", commentRoutes);
 app.use("/api/videos", videoRoutes);
 app.use("/api/auth", authRoutes);
 
-app.use((err: ExpressError, req: express.Request, res: express.Response, next: express.NextFunction) => {
+app.use((err: ExpressError, req: express.Request, res: express.Response) => {
     const error = handleError(err as ExpressError);
     res.status((err as ExpressError).status || 500).json(error as ExpressError);
 });
