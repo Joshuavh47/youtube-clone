@@ -17,6 +17,29 @@ num_workers = 5
 
 process_pool = []
 
+kafka_options = {
+    'bootstrap.servers': f'{os.environ.get('KAFKA_URI')}:{os.environ.get('KAFKA_PORT') or ('9093' if os.environ.get('SECURE')=='true' else '9092')}',
+    'group.id': 'video-processors',
+    'auto.offset.reset': 'earliest',
+}
+
+minio_options = {
+    'endpoint': f"{os.environ.get('MINIO_URI') or 'localhost'}:{os.environ.get() or '9000'}",
+    'access_key': os.environ.get('MINIO_ACCESS_KEY'),
+    'secret_key': os.environ.get('MINIO_SECRET'), 
+    'secure': True if os.environ.get('SECURE') == 'true' else False
+}
+
+def init_kafka_options():
+    if os.environ.get('SECURE') == 'true':
+        kafka_options.update(
+            {
+                "ssl.ca.location": os.environ.get('KAFKA_SSL_CA_LOCATION'),
+                "ssl.certificate.location": os.environ.get('KAFKA_SSL_CERT_LOCATION'),
+                "ssl.key.location": os.environ.get('KAFKA_SSL_KEY_LOCATION'),
+            }
+        )
+
 
 def initProcesses(num_workers):
     for _ in range(num_workers):
@@ -75,18 +98,11 @@ def processVideo():
     # Start Minio Client
     
     minioClient=Minio(
-        endpoint="localhost:9000",
-        access_key=os.environ.get('MINIO_ACCESS_KEY'),
-        secret_key=os.environ.get('MINIO_SECRET'), 
-        secure=False
+        **minio_options
     )
     
     # Start Kafka consumer
-    kafkaConsumer = Consumer({
-        'bootstrap.servers': f'{os.environ.get('KAFKA_URI')}:{os.environ.get('KAFKA_PORT') or 9092}',
-        'group.id': 'video-processors',
-        'auto.offset.reset': 'earliest',
-    })
+    kafkaConsumer = Consumer(kafka_options)
     # Subscribe to our video processing topic
     kafkaConsumer.subscribe(['video-processing-queue'])
     # Get the temp dir for video processing
@@ -102,7 +118,8 @@ def processVideo():
             raise LookupError("Kafka Message Error")
         # Get the video ID
         parsed_msg = json.loads(msg.value().decode("utf-8"))
-        videoId = parsed_msg['videoId']
+        key = parsed_msg["Records"][0]['object']['key']
+        videoId = key.removeprefix('unprocessed')
 
         # Establish input/output directories for processed videos
         input_path = f"{video_process_dir}/unprocessed/{videoId}"
@@ -141,13 +158,10 @@ def processVideo():
 
 if __name__ == "__main__":
     load_dotenv()
-    print(f'{os.environ.get('MINIO_ACCESS_KEY')}, {os.environ.get('MINIO_SECRET')}')
-    minioClient=Minio(
-        endpoint="localhost:9000",
-        access_key=os.environ.get('MINIO_ACCESS_KEY'),
-        secret_key=os.environ.get('MINIO_SECRET'), 
-        secure=False
-    )
+
+    init_kafka_options()
+
+    minioClient=Minio(**minio_options)
 
     found_unprocessed = minioClient.bucket_exists('unprocessed')
     found_processed = minioClient.bucket_exists('processed')
