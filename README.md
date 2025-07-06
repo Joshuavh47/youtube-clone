@@ -4,7 +4,7 @@ This is a video streaming platform (similar to YouTube) with a multitude of feat
 
 ## How I Did It
 
-Tech used (so far): Typescript, Express, MongoDB/Mongoose, Kafka, HMAC, OpenResty (Nginx), AWS S3/Minio, Python, FFMPEG, Multiprocessing, Webhooks, Lua
+Tech used (so far): Typescript, Express, MongoDB/Mongoose, Kafka, Nginx, AWS S3/Minio, Python, FFMPEG, Multiprocessing, Webhooks, Lua
 
 This project contanins an Express web server that manages many of the CRUD operations pertaining to Users, Videos, Comments, and Sessions. Upon researching for this project, I found that having to load full length, unprocessed videos takes a lot of time and memory (who would have thought.) To overcome this, I created a video processing microservice in Python that leverages FFMPEG to convert videos to HLS in H.264/AAC format. I chose HLS over other Adaptive Bitrate Streaming protocols such as MPEG-DASH because it is pretty widely supported and because, being a proprietary Apple protocol, it is the only ABS protocol that Apple devices natively support. However, since MPEG-DASH is codec agnostic, I could add support for this in the future.
 
