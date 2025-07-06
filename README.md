@@ -71,10 +71,10 @@ Follow these instructions to set up mTLS for your Kafka and Minio relationship. 
 1. Make a folder to hold all the certs. This can be anywhere that is readable by the cloned repository.
 2. Inside of this, make a folder to store the CA files
 3. Make the CA's private key. Ex: `openssl genrsa -out ca/ca.key 4096`
-4. Create a self-signed root certificate. Ex: `openssl req -x509 -new -nodes -key ca/ca.key -sha256 -days <days> -out ca/ca.crt -subj "/C=<US>/ST=<State>/L=<City>/O=<MyOrg>/OU=<CA>/CN=<MyRootCA>"` (with the options in angle brackets corresponding to your needs)
+4. Create a self-signed root certificate. Ex: `openssl req -x509 -new -nodes -key ca/ca.key -sha256 -days <days> -out ca/ca.crt -subj "/C=<US>/ST=<State>/L=<City>/O=<MyOrg>/OU=<CA>/CN=<Common Name Here>"` (with the options in angle brackets corresponding to your needs)
 5. Create a folder for your Kafka certs in a directory adjacent to your CA folder
 6. Create a private key for the Kafka service. Ex: `openssl genrsa -out kafka/kafka.key 2048`
-7. Create a CSR with the Kafka private key. Ex: `openssl req -new -key kafka/kafka.key -out kafka/kafka.csr -subj "/C=<US>/ST=<State>/O=<Kafka>/OU=<Broker>/CN=Common Name Here>"` (customize angle brackets to your needs)
+7. Create a CSR with the Kafka private key. Ex: `openssl req -new -key kafka/kafka.key -out kafka/kafka.csr -subj "/C=<US>/ST=<State>/O=<Kafka>/OU=<Broker>/CN=<Common Name Here>"` (customize angle brackets to your needs)
 8. Create a config file for SAN. Example: make a file named `openssl.cnf` and populate it with
   
     ```bash
