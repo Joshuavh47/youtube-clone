@@ -7,28 +7,34 @@ import traceback
 import shutil
 import json
 from confluent_kafka import Consumer
-
+from pymongo import MongoClient
+from processing_utils import ProcessingError, uploadStatus
+from confluent_kafka.admin import AdminClient, NewTopic
 
 # log_path = ""
 
-
+load_dotenv()
 
 num_workers = 5
 
 process_pool = []
 
 kafka_options = {
-    'bootstrap.servers': f'{os.environ.get('KAFKA_URI')}:{os.environ.get('KAFKA_PORT') or ('9093' if os.environ.get('SECURE')=='true' else '9092')}',
+    'bootstrap.servers': f'{os.environ.get('KAFKA_URI') or 'localhost'}:{os.environ.get('KAFKA_PORT') or ('9093' if os.environ.get('SECURE')=='true' else '9092')}',
     'group.id': 'video-processors',
     'auto.offset.reset': 'earliest',
 }
 
 minio_options = {
-    'endpoint': f"{os.environ.get('MINIO_URI') or 'localhost'}:{os.environ.get() or '9000'}",
+    'endpoint': f"{os.environ.get('MINIO_URI') or 'localhost'}:{os.environ.get('MINIO_PORT') or '9000'}",
     'access_key': os.environ.get('MINIO_ACCESS_KEY'),
     'secret_key': os.environ.get('MINIO_SECRET'), 
     'secure': True if os.environ.get('SECURE') == 'true' else False
 }
+
+mongo_client = MongoClient(os.environ.get('MONGO'))
+mongo_db = mongo_client['test']
+mongo_collection = mongo_db['videos']
 
 def init_kafka_options():
     if os.environ.get('SECURE') == 'true':
@@ -46,16 +52,16 @@ def initProcesses(num_workers):
         process_pool.append(multiprocessing.Process(target=processVideo))
    
 
-def convertToH264(input_file, output_dir, id):
+def convertToH264(input_file, output_dir, id, attempts):
     resolutions = {
         '360p': {'scale': '640x360', 'bitrate': '800k'},
         '720p': {'scale': '1280x720', 'bitrate': '2000k'},
         '1080p': {'scale': '1920x1080', 'bitrate': '4000k'}
     }
-    
+    output_with_id = os.path.join(output_dir, id)
     # Make a temp directory for our new files
-    if not os.path.exists(f'{output_dir}/{id}'):
-        os.makedirs(f'{output_dir}/{id}')
+    if not os.path.exists(output_with_id):
+        os.makedirs(output_with_id)
 
     try:
         for res, params in resolutions.items():
@@ -79,10 +85,20 @@ def convertToH264(input_file, output_dir, id):
             ).run()
     except ffmpeg.Error as e:
         print(e.stderr)
+        if(attempts <= 0):
+            for filename in os.listdir(output_with_id):
+                file_path = os.path.join(output_with_id, filename)
+                if os.path.isfile(file_path):
+                    try:
+                        os.remove(file_path)
+                    except OSError as e:
+                        print(f"Error deleting {file_path}: {e}")
+            raise ProcessingError()
+        convertToH264(input_file, output_dir, id, attempts-1)
     
     try:
         # Create master playlist (HLS)
-        with open(f'{output_dir}/{id}/{id}_master.m3u8', 'w') as f:
+        with open(f'{output_dir}/{id}/master.m3u8', 'w') as f:
             f.write('#EXTM3U\n')
             for res, _ in resolutions.items():
                 # URI is id/res.h3u8 because that is the format that is used in the S3 bucket
@@ -93,6 +109,7 @@ def convertToH264(input_file, output_dir, id):
     except Exception as e: 
         print(f"Error reading/writing to master playlist: {e}")
         traceback.print_exc()
+
 
 def processVideo():
     # Start Minio Client
@@ -118,8 +135,10 @@ def processVideo():
             raise LookupError("Kafka Message Error")
         # Get the video ID
         parsed_msg = json.loads(msg.value().decode("utf-8"))
-        key = parsed_msg["Records"][0]['object']['key']
-        videoId = key.removeprefix('unprocessed')
+        for r in parsed_msg['Records'][0]:
+            print(r)
+
+        videoId = parsed_msg['Records'][0]['s3']['object']['key']
 
         # Establish input/output directories for processed videos
         input_path = f"{video_process_dir}/unprocessed/{videoId}"
@@ -131,7 +150,26 @@ def processVideo():
         except:
             print("no work")
         # Convert video
-        convertToH264(input_path, output_dir, videoId)
+        try:
+            convertToH264(input_path, output_dir, videoId, 2)
+        except ProcessingError as e:
+            print(f"Error Processing Video: {e}")
+            mongo_collection.find_one_and_update({'_id': videoId}, {
+                '$set': {
+                    'uploadStatus': uploadStatus.FAILED
+                    }
+                }
+            )
+            continue
+
+        mongo_collection.find_one_and_update({'_id': videoId}, {
+            '$set': {
+                'uploadStatus': uploadStatus.SUCCESSFUL
+                }
+            }
+        )
+
+        minioClient.remove_object('unprocessed', videoId)
 
         # List of files created from convertToH264
         created_files = os.listdir(f'{output_dir}/{videoId}')
@@ -160,6 +198,13 @@ if __name__ == "__main__":
     load_dotenv()
 
     init_kafka_options()
+
+    kafka_admin = AdminClient(kafka_options)
+    kafka_topics = list(kafka_admin.list_topics(timeout=10).topics.keys())
+    if 'video-processing-queue' not in kafka_topics:
+        topic = [NewTopic('video-processing-queue', num_partitions=10, replication_factor=1)]
+        created_topic = kafka_admin.create_topics(topic)
+
 
     minioClient=Minio(**minio_options)
 
